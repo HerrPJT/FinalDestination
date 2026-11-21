@@ -29,7 +29,9 @@ Plots and tables in `outputs/` are recreated on every run, so they never need de
 
 ## When the models refit on their own
 
-The four model fits use `brms`'s built-in caching (`brm(file = ..., file_refit = "on_change")`). A model refits automatically when its **data, formula, priors or sampler settings** (chains, iterations, `adapt_delta`, seed, ...) change. Otherwise the saved fit is loaded in seconds.
+The four model fits use `brms`'s built-in caching (`brm(file = ..., file_refit = "on_change")`). A model refits automatically when its **data, formula or priors** change. Otherwise the saved fit is loaded in seconds.
+
+**Changing sampler settings does not trigger a refit.** If you change `chains`, `iter`, `warmup`, `control` (e.g. `adapt_delta`) or `seed`, delete the model's file in `fits/` yourself.
 
 The LOO and probability files use a helper, `cached()`. Each file stores a fingerprint of the posterior draws of the model it was computed from. If that model has refit since, the draws differ, so the file is recomputed instead of loaded. In practice, they stay in sync with their model without any manual deleting.
 

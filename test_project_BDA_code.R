@@ -11,7 +11,13 @@ library(loo)
 # outputs/ : plots (.png), tables (.csv) and printed summaries (.txt) to inspect.
 #
 # brm(file = ..., file_refit = "on_change") loads the saved fit if it exists and
-# only refits when the data, formula, priors or sampler settings change.
+# only refits when the data, formula or priors change. Changing chains, iter,
+# warmup, control or seed does NOT trigger a refit: delete the file instead.
+
+# Number of chains run in parallel. Each parallel chain is a separate process
+# with its own memory, so lowering this reduces peak memory (and runs slower).
+# It doesn't change the results.
+n_cores <- 2
 
 fit_dir <- "fits"
 out_dir <- "outputs"
@@ -119,7 +125,7 @@ m1_nonhier <- brm(
   iter    = 3000,
   warmup  = 1000,
   control = list(adapt_delta = 0.95, max_treedepth = 12),
-  cores   = 4,
+  cores   = n_cores,
   seed    = 42,
   file    = fit_path("m1_nonhier"),
   file_refit = "on_change"
@@ -135,7 +141,7 @@ m2_hier <- brm(
   iter    = 3000,
   warmup  = 1000,
   control = list(adapt_delta = 0.95, max_treedepth = 12),
-  cores   = 4,
+  cores   = n_cores,
   seed    = 42,
   file    = fit_path("m2_hier"),
   file_refit = "on_change"
@@ -221,7 +227,7 @@ m1_sensitivity <- brm(
   iter    = 3000,
   warmup  = 1000,
   control = list(adapt_delta = 0.95, max_treedepth = 12),
-  cores   = 4,
+  cores   = n_cores,
   seed    = 42,
   file    = fit_path("m1_sensitivity"),
   file_refit = "on_change"
@@ -236,7 +242,7 @@ m2_sensitivity <- brm(
   iter    = 3000,
   warmup  = 1000,
   control = list(adapt_delta = 0.95, max_treedepth = 12),
-  cores   = 4,
+  cores   = n_cores,
   seed    = 42,
   file    = fit_path("m2_sensitivity"),
   file_refit = "on_change"
@@ -297,8 +303,8 @@ save_plot(p_sens, "05_sensitivity_m2.png", width = 10, height = 4)
 
 # Compute PSIS-LOO (cached: this is one of the slow steps)
 # (moment_match = TRUE would also need save_pars = save_pars(all = TRUE) in brm)
-loo_m1 <- cached("loo_m1", loo(m1_nonhier, cores = 4), depends_on = m1_nonhier)
-loo_m2 <- cached("loo_m2", loo(m2_hier, cores = 4), depends_on = m2_hier)
+loo_m1 <- cached("loo_m1", loo(m1_nonhier, cores = n_cores, pointwise = TRUE), depends_on = m1_nonhier)
+loo_m2 <- cached("loo_m2", loo(m2_hier, cores = n_cores, pointwise = TRUE), depends_on = m2_hier)
 
 comp_loo <- loo_compare(loo_m1, loo_m2)
 
@@ -310,8 +316,17 @@ save_text("06_loo.txt", {
 write_csv(as_tibble(comp_loo, rownames = "model"), out_path("06_loo_compare.csv"))
 
 # Posterior mean predicted probability per observation (cached: memory-heavy)
-probs_m1 <- cached("probs_m1", colMeans(posterior_epred(m1_nonhier, newdata = data_clean)), depends_on = m1_nonhier)
-probs_m2 <- cached("probs_m2", colMeans(posterior_epred(m2_hier, newdata = data_clean)), depends_on = m2_hier)
+# Computed in chunks of rows: the full draws x rows matrix would be ~1.7 GB per
+# model. Same result as colMeans(posterior_epred(model, newdata = data)).
+mean_epred <- function(model, data, chunk_size = 2000) {
+  chunks <- split(seq_len(nrow(data)), ceiling(seq_len(nrow(data)) / chunk_size))
+  unlist(lapply(chunks, function(rows) {
+    colMeans(posterior_epred(model, newdata = data[rows, , drop = FALSE]))
+  }), use.names = FALSE)
+}
+
+probs_m1 <- cached("probs_m1", mean_epred(m1_nonhier, data_clean), depends_on = m1_nonhier)
+probs_m2 <- cached("probs_m2", mean_epred(m2_hier, data_clean), depends_on = m2_hier)
 
 # Practical classification metrics (e.g., threshold = 0.05 and 0.50)
 eval_classification <- function(probs, y, model_label, thresholds = c(0.05, 0.50)) {
