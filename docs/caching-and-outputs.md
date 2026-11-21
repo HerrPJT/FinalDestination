@@ -16,14 +16,13 @@ The analysis script [`test_project_BDA_code.R`](../test_project_BDA_code.R) save
 | Predicted probabilities for Model 1 / Model 2 (used by the classification metrics) | `fits/probs_m1.rds` / `fits/probs_m2.rds` |
 | Everything | the whole `fits/` folder |
 
-> **Important: after a main model refits, delete its LOO and probability files too.**
-> The LOO and probability caches don't know when their model changed. If Model 1 refits (for example after a prior change), delete `fits/loo_m1.rds` and `fits/probs_m1.rds` as well, or the comparison and metrics will come from the old fit. The same goes for Model 2 with `loo_m2.rds` and `probs_m2.rds`.
+Deleting a model's file is enough: its LOO and probability files rebuild on their own once the model refits.
 
 From an R console or notebook cell:
 
 ```r
-file.remove("fits/m2_hier.rds", "fits/loo_m2.rds", "fits/probs_m2.rds")  # rerun Model 2 and everything that depends on it
-unlink("fits", recursive = TRUE)                                         # rerun everything
+file.remove("fits/m2_hier.rds")    # rerun Model 2 (its LOO and probabilities follow)
+unlink("fits", recursive = TRUE)   # rerun everything
 ```
 
 Plots and tables in `outputs/` are recreated on every run, so they never need deleting.
@@ -32,7 +31,7 @@ Plots and tables in `outputs/` are recreated on every run, so they never need de
 
 The four model fits use `brms`'s built-in caching (`brm(file = ..., file_refit = "on_change")`). A model refits automatically when its **data, formula, priors or sampler settings** (chains, iterations, `adapt_delta`, seed, ...) change. Otherwise the saved fit is loaded in seconds.
 
-The LOO and probability files use a simpler helper, `cached()`, that only checks whether the file exists. That's why they need deleting by hand (see the warning above).
+The LOO and probability files use a helper, `cached()`. Each file stores a fingerprint of the posterior draws of the model it was computed from. If that model has refit since, the draws differ, so the file is recomputed instead of loaded. In practice, they stay in sync with their model without any manual deleting.
 
 ## Where files go
 

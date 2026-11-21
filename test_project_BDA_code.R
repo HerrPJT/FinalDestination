@@ -22,14 +22,22 @@ fit_path <- function(name) file.path(fit_dir, name)
 out_path <- function(name) file.path(out_dir, name)
 
 # Run `expr` once and cache its result; later runs load it from disk.
-cached <- function(name, expr) {
+# `depends_on` is the model fit the result is computed from: the cache stores a
+# fingerprint of that fit's posterior draws and recomputes if the fit changed
+# (e.g. the model refit after a prior change).
+cached <- function(name, expr, depends_on) {
   path <- fit_path(paste0(name, ".rds"))
+  key  <- rlang::hash(as.matrix(depends_on))
   if (file.exists(path)) {
-    message("Loading cached ", path)
-    return(readRDS(path))
+    saved <- readRDS(path)
+    if (is.list(saved) && identical(saved$key, key)) {
+      message("Loading cached ", path)
+      return(saved$value)
+    }
+    message("Model changed since ", path, " was saved; recomputing")
   }
   res <- expr
-  saveRDS(res, path)
+  saveRDS(list(key = key, value = res), path)
   res
 }
 
@@ -285,8 +293,8 @@ save_plot(p_sens, "05_sensitivity_m2.png", width = 10, height = 4)
 
 # Compute PSIS-LOO (cached: this is one of the slow steps)
 # (moment_match = TRUE would also need save_pars = save_pars(all = TRUE) in brm)
-loo_m1 <- cached("loo_m1", loo(m1_nonhier, cores = 4))
-loo_m2 <- cached("loo_m2", loo(m2_hier, cores = 4))
+loo_m1 <- cached("loo_m1", loo(m1_nonhier, cores = 4), depends_on = m1_nonhier)
+loo_m2 <- cached("loo_m2", loo(m2_hier, cores = 4), depends_on = m2_hier)
 
 comp_loo <- loo_compare(loo_m1, loo_m2)
 
@@ -298,8 +306,8 @@ save_text("06_loo.txt", {
 write_csv(as_tibble(comp_loo, rownames = "model"), out_path("06_loo_compare.csv"))
 
 # Posterior mean predicted probability per observation (cached: memory-heavy)
-probs_m1 <- cached("probs_m1", colMeans(posterior_epred(m1_nonhier, newdata = data_clean)))
-probs_m2 <- cached("probs_m2", colMeans(posterior_epred(m2_hier, newdata = data_clean)))
+probs_m1 <- cached("probs_m1", colMeans(posterior_epred(m1_nonhier, newdata = data_clean)), depends_on = m1_nonhier)
+probs_m2 <- cached("probs_m2", colMeans(posterior_epred(m2_hier, newdata = data_clean)), depends_on = m2_hier)
 
 # Practical classification metrics (e.g., threshold = 0.05 and 0.50)
 eval_classification <- function(probs, y, model_label, thresholds = c(0.05, 0.50)) {
