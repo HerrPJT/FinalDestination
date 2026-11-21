@@ -51,7 +51,7 @@ Files are prefixed by section number:
 | `01_data_summary.txt` | Row counts, death rate, predictor summaries |
 | `01_observed_death_rates.csv` | Raw death rate by each predictor level and vehicle year |
 | `03_summary_m1.txt`, `03_summary_m2.txt` | `brms` model summaries |
-| `03_diagnostics.csv` | Per model: worst R-hat, worst ESS ratio, divergences, treedepth hits |
+| `03_diagnostics.csv` | Per model: worst R-hat, lowest bulk and tail ESS, divergences, treedepth hits |
 | `03_trace_m2.png` | Trace plots for key Model 2 parameters |
 | `03_fixed_effects.csv` | Coefficient estimates for both models |
 | `03_yearVeh_intercepts_m2.csv` | Vehicle-year intercepts from Model 2 |

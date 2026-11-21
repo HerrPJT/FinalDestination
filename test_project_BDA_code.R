@@ -148,13 +148,17 @@ m2_hier <- brm(
 save_text("03_summary_m1.txt", print(summary(m1_nonhier)))
 save_text("03_summary_m2.txt", print(summary(m2_hier)))
 
-# One row per model: worst R-hat, worst ESS ratio, divergences, treedepth hits
+# One row per model: worst R-hat, lowest bulk/tail ESS, divergences, treedepth hits
+# (uses posterior:: explicitly: bayesplot's rhat()/neff_ratio() mask brms's and
+# fail on brmsfit objects)
 diagnostics_row <- function(fit, label, max_treedepth = 12) {
   np <- nuts_params(fit)
+  conv <- posterior::summarise_draws(as_draws_df(fit), posterior::default_convergence_measures())
   tibble(
     model            = label,
-    max_rhat         = max(rhat(fit), na.rm = TRUE),
-    min_neff_ratio   = min(neff_ratio(fit), na.rm = TRUE),
+    max_rhat         = max(conv$rhat, na.rm = TRUE),
+    min_ess_bulk     = min(conv$ess_bulk, na.rm = TRUE),
+    min_ess_tail     = min(conv$ess_tail, na.rm = TRUE),
     divergences      = sum(subset(np, Parameter == "divergent__")$Value),
     treedepth_hits   = sum(subset(np, Parameter == "treedepth__")$Value >= max_treedepth)
   )
