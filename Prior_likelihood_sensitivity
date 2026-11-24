@@ -1,0 +1,106 @@
+library(tidyverse)
+library(brms)
+library(priorsense)
+
+# ==============================================================================
+# 1. LOAD AND CLEAN DATA
+# ==============================================================================
+
+data_src <- if (file.exists("nassCDS.csv")) {
+  "nassCDS.csv"
+} else {
+  "https://vincentarelbundock.github.io/Rdatasets/csv/DAAG/nassCDS.csv"
+}
+
+data_clean <- read.csv(data_src) %>%
+  drop_na(yearVeh) %>%
+  mutate(
+    y        = if_else(dead == "dead", 1, 0),
+    seatbelt = factor(seatbelt, levels = c("none", "belted")),
+    airbag   = factor(airbag, levels = c("none", "airbag")),
+    dvcat    = factor(dvcat, levels = c("1-9km/h", "10-24", "25-39", "40-54", "55+")),
+    yearVeh  = as.factor(yearVeh)
+  )
+
+# ==============================================================================
+# 2. PRIORS AND MODEL FITS
+# ==============================================================================
+
+priors_m1 <- c(
+  prior(normal(-3.5, 1), class = "Intercept"),
+  prior(normal(-0.2, 0.2), class = "b", coef = "seatbeltbelted"),
+  prior(normal(-0.1, 0.3), class = "b", coef = "airbagairbag"),
+  prior(normal(0.3, 1), class = "b", coef = "dvcat10M24"),
+  prior(normal(1.1, 0.8), class = "b", coef = "dvcat25M39"),
+  prior(normal(1.8, 0.7), class = "b", coef = "dvcat40M54"),
+  prior(normal(2.4, 0.3), class = "b", coef = "dvcat55P")
+)
+
+priors_m2 <- c(
+  priors_m1,
+  prior(normal(0, 1), class = "sd", group = "yearVeh")
+)
+
+m1_nonhier <- brm(
+  formula    = y ~ 1 + seatbelt + airbag + dvcat,
+  data       = data_clean,
+  family     = bernoulli(link = "logit"),
+  prior      = priors_m1,
+  chains     = 4,
+  iter       = 3000,
+  warmup     = 1000,
+  control    = list(adapt_delta = 0.95, max_treedepth = 12),
+  cores      = 2,
+  seed       = 42,
+  file       = "m1_nonhier",
+  file_refit = "on_change"
+)
+
+m2_hier <- brm(
+  formula    = y ~ 1 + seatbelt + airbag + dvcat + (1 | yearVeh),
+  data       = data_clean,
+  family     = bernoulli(link = "logit"),
+  prior      = priors_m2,
+  chains     = 4,
+  iter       = 3000,
+  warmup     = 1000,
+  control    = list(adapt_delta = 0.95, max_treedepth = 12),
+  cores      = 2,
+  seed       = 42,
+  file       = "m2_hier",
+  file_refit = "on_change"
+)
+
+# ==============================================================================
+# 3. FAST PRIOR SENSITIVITY (SUBSAMPLED DATA FOR priorsense)
+# ==============================================================================
+
+main_vars_m1 <- c(
+  "b_Intercept", "b_seatbeltbelted", "b_airbagairbag",
+  "b_dvcat10M24", "b_dvcat25M39", "b_dvcat40M54", "b_dvcat55P"
+)
+
+main_vars_m2 <- c(main_vars_m1, "sd_yearVeh__Intercept")
+
+set.seed(42)
+sub_idx <- sample(seq_len(nrow(data_clean)), size = 4000)
+data_ps <- data_clean[sub_idx, , drop = FALSE]
+
+ps_m1 <- create_priorsense_data(m1_nonhier, newdata = data_ps)
+ps_m2 <- create_priorsense_data(m2_hier,    newdata = data_ps)
+
+cat("=== Model 1 Power-Scale Sensitivity (4,000 rows) ===\n")
+powerscale_sensitivity(ps_m1, variable = main_vars_m1)
+
+cat("\n=== Model 2 Power-Scale Sensitivity (4,000 rows) ===\n")
+powerscale_sensitivity(ps_m2, variable = main_vars_m2)
+
+powerscale_plot_ecdf(
+  ps_m1,
+  variable = c("b_Intercept", "b_seatbeltbelted", "b_airbagairbag")
+)
+
+powerscale_plot_ecdf(
+  ps_m2,
+  variable = c("b_Intercept", "b_seatbeltbelted", "b_airbagairbag", "sd_yearVeh__Intercept")
+)
